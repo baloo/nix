@@ -188,6 +188,22 @@ pub struct Termios {
 }
 
 impl Termios {
+    /// Allows for easily creating new `Termios` structs that will be overwritten with real data.
+    ///
+    /// This should only be used when the inner libc::termios struct will be overwritten before it's
+    /// read.
+    #[allow(unused)] // It's used in doctests, but it's still caught by deny(unused) so whitelist it
+    pub(crate) unsafe fn default_uninit() -> Self {
+        Termios {
+            inner: RefCell::new(mem::zeroed()),
+            input_flags: InputFlags::empty(),
+            output_flags: OutputFlags::empty(),
+            control_flags: ControlFlags::empty(),
+            local_flags: LocalFlags::empty(),
+            control_chars: [0 as libc::cc_t; NCCS],
+        }
+    }
+
     /// Exposes an immutable reference to the underlying `libc::termios` data structure.
     ///
     /// This can be used for interfacing with other FFI functions like:
@@ -205,9 +221,7 @@ impl Termios {
     ///
     /// There is no public API exposed for functions that modify the underlying `libc::termios`
     /// data because it requires additional work to maintain type safety.
-    // FIXME: Switch this over to use pub(crate)
-    #[doc(hidden)]
-    pub fn get_libc_termios(&self) -> Ref<libc::termios> {
+    pub(crate) fn get_libc_termios(&self) -> Ref<libc::termios> {
         {
             let mut termios = self.inner.borrow_mut();
             termios.c_iflag = self.input_flags.bits();
@@ -221,12 +235,11 @@ impl Termios {
 
     /// Exposes the inner `libc::termios` datastore within `Termios`.
     ///
-    /// This is unsafe because if this is used to modify the inner libc::termios struct, it will not
-    /// automatically update the safe wrapper type around it. Therefore we disable docs to
-    /// effectively limit its use to nix internals. In this case it should also be paired with a
-    /// call to `update_wrapper()` so that the wrapper-type and internal representation stay
-    /// consistent.
-    unsafe fn get_libc_termios_mut(&mut self) -> *mut libc::termios {
+    /// This is unsafe because if this is used to modify the inner `libc::termios` struct, it will
+    /// not automatically update the safe wrapper type around it. In this case it should also be
+    /// paired with a call to `update_wrapper()` so that the wrapper-type and internal
+    /// representation stay consistent.
+    pub(crate) unsafe fn get_libc_termios_mut(&mut self) -> *mut libc::termios {
         {
             let mut termios = self.inner.borrow_mut();
             termios.c_iflag = self.input_flags.bits();
@@ -238,26 +251,8 @@ impl Termios {
         self.inner.as_ptr()
     }
 
-    /// Allows for easily creating new `Termios` structs that will be overwritten with real data.
-    ///
-    /// This should only be used when the inner libc::termios struct will be overwritten before it's
-    /// read.
-    // FIXME: Switch this over to use pub(crate)
-    #[doc(hidden)]
-    pub unsafe fn default_uninit() -> Self {
-        Termios {
-            inner: RefCell::new(mem::zeroed()),
-            input_flags: InputFlags::empty(),
-            output_flags: OutputFlags::empty(),
-            control_flags: ControlFlags::empty(),
-            local_flags: LocalFlags::empty(),
-            control_chars: [0 as libc::cc_t; NCCS],
-        }
-    }
-
     /// Updates the wrapper values from the internal `libc::termios` data structure.
-    #[doc(hidden)]
-    pub fn update_wrapper(&mut self) {
+    pub(crate) fn update_wrapper(&mut self) {
         let termios = *self.inner.borrow_mut();
         self.input_flags = InputFlags::from_bits_truncate(termios.c_iflag);
         self.output_flags = OutputFlags::from_bits_truncate(termios.c_oflag);
